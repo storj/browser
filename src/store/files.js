@@ -267,9 +267,43 @@ export default {
 		},
 
 		async upload({ commit, state, dispatch }, e) {
-			const files = e.dataTransfer
-				? e.dataTransfer.files
-				: e.target.files;
+			const traverseFileTree = async (item) => {
+				if (item.isFile) {
+					// Get file
+					const file = await new Promise((resolve, reject) => item.file(resolve, reject));
+					return [file];
+				} else if (item.isDirectory) {
+					const files = [];
+					// Get folder contents
+					const dirReader = item.createReader();
+					await new Promise((resolve) => {
+						dirReader.readEntries(async (entries) => {
+							for (const entry of entries) {
+								files.push(... await traverseFileTree(entry));
+							}
+							resolve();
+						});
+					});
+
+					return files;
+				}
+
+				throw new Error("Item is not directory or file");
+			}
+
+			let files = [];
+			const items = e.dataTransfer ? e.dataTransfer.items : e.target.files;
+
+			if (!(items instanceof FileList)) {
+				const nestedArray = Array.from(items)
+					.map((item) =>
+						item.webkitGetAsEntry() || item.getAsEntry())
+					.map(traverseFileTree);
+
+				files = [].concat(... await Promise.all(nestedArray));
+			} else {
+				files = items;
+			}
 
 			const fileNames = state.files.map((file) => file.Key);
 
